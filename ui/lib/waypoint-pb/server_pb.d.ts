@@ -6262,6 +6262,44 @@ export namespace GetStatusReportRequest {
   }
 }
 
+export class ExpediteStatusReportRequest extends jspb.Message {
+  getRef(): Ref.Operation | undefined;
+  setRef(value?: Ref.Operation): ExpediteStatusReportRequest;
+  hasRef(): boolean;
+  clearRef(): ExpediteStatusReportRequest;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): ExpediteStatusReportRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: ExpediteStatusReportRequest): ExpediteStatusReportRequest.AsObject;
+  static serializeBinaryToWriter(message: ExpediteStatusReportRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): ExpediteStatusReportRequest;
+  static deserializeBinaryFromReader(message: ExpediteStatusReportRequest, reader: jspb.BinaryReader): ExpediteStatusReportRequest;
+}
+
+export namespace ExpediteStatusReportRequest {
+  export type AsObject = {
+    ref?: Ref.Operation.AsObject,
+  }
+}
+
+export class ExpediteStatusReportResponse extends jspb.Message {
+  getId(): string;
+  setId(value: string): ExpediteStatusReportResponse;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): ExpediteStatusReportResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: ExpediteStatusReportResponse): ExpediteStatusReportResponse.AsObject;
+  static serializeBinaryToWriter(message: ExpediteStatusReportResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): ExpediteStatusReportResponse;
+  static deserializeBinaryFromReader(message: ExpediteStatusReportResponse, reader: jspb.BinaryReader): ExpediteStatusReportResponse;
+}
+
+export namespace ExpediteStatusReportResponse {
+  export type AsObject = {
+    id: string,
+  }
+}
+
 export class StatusReport extends jspb.Message {
   getApplication(): Ref.Application | undefined;
   setApplication(value?: Ref.Application): StatusReport;

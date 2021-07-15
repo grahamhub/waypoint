@@ -37,6 +37,16 @@
     </small>
   </div>
   {{/if}}
+  {{#if @model.statusReport.status.completeTime.seconds}}
+    <div class="item">
+      Last checked {{date-format-distance-to-now @model.statusReport.status.completeTime.seconds }}
+    </div>
+  {{/if}}
+  <div class="item">
+    <Pds::Button @variant="ghost" @iconStart="refresh-default" {{on "click"(fn this.refreshHealthCheck)}}>
+      Re-run health check
+    </Pds::Button>
+  </div>
 </div>
 
 <OperationLogs @jobId={{@model.jobId}} />

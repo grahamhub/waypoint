@@ -20,6 +20,9 @@ import {
   GetLatestStatusReportRequest,
   ListPushedArtifactsRequest,
   PushedArtifact,
+  Job,
+  ExpediteStatusReportRequest,
+  ExpediteStatusReportResponse,
 } from 'waypoint-pb';
 import { Metadata } from 'grpc-web';
 import config from 'waypoint/config/environment';
@@ -143,6 +146,18 @@ export default class ApiService extends Service {
     // We have to try/catch to avoid failing the hash request because the api errors if no statusReport is available
     try {
       let resp: StatusReport = await this.client.getLatestStatusReport(req, this.WithMeta());
+      return resp.toObject();
+    } catch {
+      return;
+    }
+  }
+
+  async expediteStatusReport(opRef: Ref.Operation): Promise<Job | undefined> {
+    let req = new ExpediteStatusReportRequest();
+    req.setRef(opRef);
+
+    try {
+      let resp = await this.client.expediteStatusReport(req, this.WithMeta());
       return resp.toObject();
     } catch {
       return;
