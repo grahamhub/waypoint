@@ -1,0 +1,50 @@
+<PageHeader @iconName="upload">
+  <div class="title">
+    <h1><b class="badge badge--version">v{{@model.sequence}}</b></h1>
+    <small>
+      <Pds::Icon @type={{icon-for-component @model.component.name}} class="icon" />
+      <span>Deployed by <b>{{component-name @model.component.name}}</b>
+        {{date-format-distance-to-now @model.status.startTime.seconds }}</span>
+    </small>
+  </div>
+  <div class="actions">
+    <div class="button-group">
+      <ExternalLink
+        href={{enforce-protocol @model.preload.deployUrl}}
+        class="button button--secondary button--external-link">
+        <span>{{lowercase @model.preload.deployUrl}}</span>
+        <Pds::Icon @type="exit" class="icon" />
+      </ExternalLink>
+      <Actions::Release @sequence={{@model.sequence}} />
+    </div>
+  </div>
+</PageHeader>
+
+<div class="status-row">
+  <div class="item">
+    {{#if this.statusReport}}
+      <StatusReportIndicator @statusReport={{this.statusReport}} />
+    {{/if}}
+  </div>
+
+  {{#if @model.build}}
+  <div class="item">
+    <small>
+      Build <a href="#"><b class="badge badge--version">#{{@model.build.sequence}}</b>
+        <code>{{@model.build.id}}</code></a>
+    </small>
+  </div>
+  {{/if}}
+  {{#if this.statusReport.status.completeTime.seconds}}
+    <div class="item">
+      Last checked {{date-format-distance-to-now this.statusReport.status.completeTime.seconds }}
+    </div>
+  {{/if}}
+  <div class="item">
+    <Pds::Button @variant="ghost" @iconStart="refresh-default" disabled={{this.isRefreshRunning}} {{on "click" this.refreshHealthCheck}}>
+      Re-run health check
+    </Pds::Button>
+  </div>
+</div>
+
+<OperationLogs @jobId={{@model.jobId}} />
