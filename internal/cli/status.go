@@ -31,10 +31,11 @@ type StatusCommand struct {
 func (c *StatusCommand) Run(args []string) int {
 	flagSet := c.Flags()
 	// Initialize. If we fail, we just exit since Init handles the UI.
+	// TODO: this doesn't support running waypoint commands outside of a project dir
 	if err := c.Init(
 		WithArgs(args),
 		WithFlags(flagSet),
-		WithNoConfig(),
+		WithSingleApp(),
 	); err != nil {
 		return 1
 	}
@@ -59,7 +60,7 @@ func (c *StatusCommand) Run(args []string) int {
 
 	cmdArgs := flagSet.Args()
 
-	if len(args) > 1 {
+	if len(cmdArgs) > 1 {
 		c.ui.Output("No more than 1 argument required.\n\n"+c.Help(), terminal.WithErrorStyle())
 		return 1
 	}
@@ -73,14 +74,28 @@ func (c *StatusCommand) Run(args []string) int {
 	// 3 waypoint status project/app
 	// 3.1 waypoint status project -app=app
 
-	var target string
-	if len(args) == 1 {
-		target = cmdArgs[0]
-		c.ui.Output(target)
-		// TODO determine if target has slash
+	var projectTarget, appTarget string
+	if len(cmdArgs) >= 1 {
+		s := cmdArgs[0]
+		target := strings.Split(s, "/") // This breaks if we allow projects with "/" in the name
+
+		projectTarget = target[0]
+		if len(target) == 2 {
+			appTarget = target[1]
+		}
+
+	} else if len(cmdArgs) == 0 {
+		// We're in a project dir
+		projectTarget = c.project.Ref().Project
 	}
 
-	if target == "" {
+	if appTarget == "" && c.flagApp != "" {
+		appTarget = c.flagApp
+	} else if appTarget != "" && c.flagApp != "" {
+		c.ui.Output(wpAppFlagAndTargetIncludedMsg, terminal.WithWarningStyle())
+	}
+
+	if projectTarget == "" || c.flagAllProjects {
 		// Show high-level status of all projects
 		c.ui.Output(wpStatusMsg, ctxConfig.Server.Address)
 
@@ -90,6 +105,12 @@ func (c *StatusCommand) Run(args []string) int {
 			c.ui.Output(clierrors.Humanize(err), terminal.WithErrorStyle())
 			return 1
 		}
+	} else if projectTarget != "" && appTarget == "" {
+		// Show status of apps inside project
+		c.ui.Output(wpStatusProjectMsg, projectTarget, ctxConfig.Server.Address)
+	} else if projectTarget != "" && appTarget != "" {
+		// Advanced view of a single app status
+		c.ui.Output(wpStatusAppProjectMsg, appTarget, projectTarget, ctxConfig.Server.Address)
 	}
 
 	return 0
@@ -309,10 +330,14 @@ their current state, run ‘waypoint status PROJECT-NAME’.
 
 	wpStatusProjectMsg = "Current status for project %q in server context %q."
 
+	wpStatusAppProjectMsg = strings.TrimSpace(`
+Current status for application % q in project %q in server context %q.
+`)
+
 	// Failure messages
 
 	// TODO how to show hints for multiple app failures
-	wpStatusHealthTriageMsg = `
+	wpStatusHealthTriageMsg = strings.TrimSpace(`
 To see more information about the failing application, please check out the application logs:
 
 waypoint logs -app=%[1]s
@@ -321,24 +346,24 @@ The projects listed above represent their current state known
 in Waypoint server. For more information about an application defined in the project %[1]q can be viewed by running the command:
 
 waypoint status %[2]s -app=%[1]s.
-`
+`)
 
-	wpProjectNotFound = `
+	wpProjectNotFound = strings.TrimeSpace(`
 No project name %q was found for the server context %q. To see a list of
 currently configured projects, run “waypoint project list”.
 
 If you want more information for a specific application, use the '-app' flag
 with “waypoint status PROJECT-NAME -app=APP-NAME”.
-`
+`)
 
-	wpAppFlagAndTargetIncludedMsg = `
-The 'app' flag was included, but an application was also requested from the
-argument %q. The app flag will be ignored.
-`
+	wpAppFlagAndTargetIncludedMsg = strings.TrimeSpace(`
+The 'app' flag was included, but an application was also requested as an argument.
+The app flag will be ignored.
+`)
 
 	// TODO do we need a "waypoint application list"
-	wpAppNotFound = `
+	wpAppNotFound = strings.TrimSpace(`
 No app name %q was found in project %q for the server context %q. To see a
 list of currently configured projects, run “waypoint project list”.
-`
+`)
 )
