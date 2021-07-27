@@ -4,13 +4,17 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/docker/cli/cli/command/image/build"
 	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/versions"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/idtools"
@@ -20,6 +24,7 @@ import (
 	"github.com/hashicorp/waypoint-plugin-sdk/component"
 	"github.com/hashicorp/waypoint-plugin-sdk/docs"
 	"github.com/hashicorp/waypoint-plugin-sdk/terminal"
+	"github.com/moby/buildkit/session"
 	"github.com/oklog/ulid/v2"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -28,6 +33,8 @@ import (
 	"github.com/hashicorp/waypoint/internal/assets"
 	"github.com/hashicorp/waypoint/internal/pkg/epinject"
 )
+
+const buildkitSessionName = "waypoint"
 
 // Builder uses `docker build` to build a Docker iamge.
 type Builder struct {
@@ -341,13 +348,39 @@ func (b *Builder) buildWithDocker(
 		return err
 	}
 
-	resp, err := cli.ImageBuild(ctx, buildCtx, types.ImageBuildOptions{
+	buildOpts := types.ImageBuildOptions{
 		Version:    ver,
 		Dockerfile: relDockerfile,
 		Tags:       []string{tag},
 		Remove:     true,
 		BuildArgs:  buildArgs,
-	})
+		Platform:   "linux/arm64/v8",
+	}
+
+	// Buildkit builds need a session under most circumstances
+	if ver == types.BuilderBuildKit && versions.GreaterThanOrEqualTo(cli.ClientVersion(), "1.39") {
+
+		// TODO(izaak) What exactly is this used for, and does it need to be something else for security reasons?
+		sharedKeySeed, err := rand.Read(make([]byte, 32))
+		if err != nil {
+			return err
+		}
+		sharedKeySha := sha256.Sum256([]byte(fmt.Sprintf("%d:%s", sharedKeySeed, buildkitSessionName)))
+		sharedKey := hex.EncodeToString(sharedKeySha[:])
+
+		s, _ := session.NewSession(ctx, buildkitSessionName, sharedKey)
+
+		dialSession := func(ctx context.Context, proto string, meta map[string][]string) (net.Conn, error) {
+			return cli.DialHijack(ctx, "/session", proto, meta)
+		}
+
+		go s.Run(ctx, dialSession)
+		defer s.Close()
+
+		buildOpts.SessionID = s.ID()
+	}
+
+	resp, err := cli.ImageBuild(ctx, buildCtx, buildOpts)
 	if err != nil {
 		return status.Errorf(codes.Internal, "error building image: %s", err)
 	}
