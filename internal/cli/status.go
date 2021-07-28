@@ -2,7 +2,9 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/dustin/go-humanize"
@@ -180,6 +182,7 @@ func (c *StatusCommand) FormatProjectAppStatus(projectTarget string) error {
 		})
 		if status.Code(err) == codes.NotFound {
 			// App doesn't have a status report yet, likely not deployed
+			// TODO: does this skip listing the app entirely?
 			err = nil
 			continue
 		}
@@ -241,19 +244,194 @@ func (c *StatusCommand) FormatProjectAppStatus(projectTarget string) error {
 
 func (c *StatusCommand) FormatAppStatus(projectTarget string, appTarget string) error {
 	// Get our API client
-	//client := c.project.Client()
+	client := c.project.Client()
 
-	// TODO: Multiple tables to print here. Generate all tables
-	// and print them all at once at the end
+	projResp, err := client.GetProject(c.Ctx, &pb.GetProjectRequest{
+		Project: &pb.Ref_Project{
+			Project: projectTarget,
+		},
+	})
+	if err != nil {
+		return err
+	}
+
+	var workspace string
+	if len(projResp.Workspaces) == 0 {
+		// this happens if you just wapyoint init
+		// probably a bug?
+		workspace = "???"
+	} else {
+		workspace = projResp.Workspaces[0].Workspace.Workspace // TODO: assume the first workspace is correct??
+	}
 
 	// App Summary
 	//  Summary of single app
+	var app *pb.Application
+	for _, a := range projResp.Project.Applications {
+		if a.Name == appTarget {
+			app = a
+			break
+		}
+	}
+	if app == nil {
+		return errors.New(fmt.Sprintf("Did not find aplication %q in project %q", appTarget, projectTarget))
+	}
+
+	appStatusResp, err := client.GetLatestStatusReport(c.Ctx, &pb.GetLatestStatusReportRequest{
+		Application: &pb.Ref_Application{
+			Application: app.Name,
+			Project:     projResp.Project.Name,
+		},
+		Workspace: &pb.Ref_Workspace{
+			Workspace: workspace,
+		},
+	})
+	if status.Code(err) == codes.NotFound {
+		// App doesn't have a status report yet, likely not deployed
+		err = nil
+		// TODO: make statusReportComplete N/A
+	}
+	if err != nil {
+		return err
+	}
+
+	appHeaders := []string{
+		"App", "Workspace", "Latest Status",
+	}
+
+	appTbl := terminal.NewTable(appHeaders...)
+
+	appFailures := false
+	statusReportComplete := "N/A"
+	// TODO: make a func that returns the result of statusReportComplete
+	switch appStatusResp.Health.HealthStatus {
+	case "READY":
+		statusReportComplete = "✔ READY"
+	case "ALIVE":
+		statusReportComplete = "✔ ALIVE"
+	case "DOWN":
+		statusReportComplete = "✖ DOWN"
+		appFailures = true
+	case "PARTIAL":
+		statusReportComplete = "● PARTIAL"
+		appFailures = true
+	case "UNKNOWN":
+		statusReportComplete = "? UNKNOWN"
+		appFailures = true
+	}
+
+	if t, err := ptypes.Timestamp(appStatusResp.GeneratedTime); err == nil {
+		statusReportComplete = fmt.Sprintf("%s - %s", statusReportComplete, humanize.Time(t))
+	}
+
+	statusColor := ""
+	columns := []string{
+		app.Name,
+		workspace,
+		statusReportComplete, // app statuses overall
+	}
+
+	// Add column data to table
+	appTbl.Rich(
+		columns,
+		[]string{
+			statusColor,
+		},
+	)
+
 	// Deployment Summary
 	//   Deployment List
-	// Deployment Resources Summary
-	//   Resources List
+
+	respDeployList, err := client.ListDeployments(c.Ctx, &pb.ListDeploymentsRequest{
+		Application: &pb.Ref_Application{
+			Application: app.Name,
+			Project:     projResp.Project.Name,
+		},
+		Workspace: &pb.Ref_Workspace{
+			Workspace: workspace,
+		},
+		//PhysicalState: phyState,
+		//Status:        c.filterFlags.statusFilters(),
+		//Order:         c.filterFlags.orderOp(),
+		LoadDetails: pb.Deployment_BUILD,
+	})
+	if err != nil {
+		return err
+	}
+
+	deployHeaders := []string{
+		"App Name", "Physical State", "Id", "Artifact Id", "Exec", "Logs",
+	}
+
+	deployTbl := terminal.NewTable(deployHeaders...)
+
+	resourcesHeaders := []string{
+		"Type", "Platform", "Category",
+	}
+
+	resourcesTbl := terminal.NewTable(resourcesHeaders...)
+
+	if len(respDeployList.Deployments) > 0 {
+		deploy := respDeployList.Deployments[0] // TODO: get the latest deploy
+		statusColor := ""
+
+		columns := []string{
+			deploy.Application.Application,
+			deploy.Status.State.String(),
+			deploy.Id,
+			deploy.ArtifactId,
+			strconv.FormatBool(deploy.HasExecPlugin),
+			strconv.FormatBool(deploy.HasLogsPlugin),
+		}
+
+		// Add column data to table
+		deployTbl.Rich(
+			columns,
+			[]string{
+				statusColor,
+			},
+		)
+
+		// Deployment Resources Summary
+		//   Resources List
+		for _, dr := range deploy.DeclaredResources {
+			columns := []string{
+				dr.Type,
+				dr.Platform,
+				dr.CategoryDisplayHint.String(),
+			}
+
+			// Add column data to table
+			deployTbl.Rich(
+				columns,
+				[]string{
+					statusColor,
+				},
+			)
+		}
+
+	} // else show no table
+
 	// Recent Events
 	//   Events List
+
+	c.ui.Output("")
+	c.ui.Output("Application Summary")
+	c.ui.Table(appTbl, terminal.WithStyle("Simple"))
+	c.ui.Output("")
+	c.ui.Output("Deployment Summary")
+	c.ui.Table(deployTbl, terminal.WithStyle("Simple"))
+	c.ui.Output("")
+	c.ui.Output("Deployment Resources Summary")
+	c.ui.Table(resourcesTbl, terminal.WithStyle("Simple"))
+	c.ui.Output("")
+	c.ui.Output(wpStatusSuccessMsg)
+
+	if appFailures {
+		c.ui.Output("")
+
+		c.ui.Output(wpStatusHealthTriageMsg, projectTarget, terminal.WithWarningStyle())
+	}
 
 	return nil
 }
