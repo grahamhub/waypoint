@@ -190,27 +190,7 @@ func (c *StatusCommand) FormatProjectAppStatus(projectTarget string) error {
 			return err
 		}
 
-		statusReportComplete := "N/A"
-		// TODO: make a func that returns the result of statusReportComplete
-		switch appStatusResp.Health.HealthStatus {
-		case "READY":
-			statusReportComplete = "✔ READY"
-		case "ALIVE":
-			statusReportComplete = "✔ ALIVE"
-		case "DOWN":
-			statusReportComplete = "✖ DOWN"
-			appFailures = true
-		case "PARTIAL":
-			statusReportComplete = "● PARTIAL"
-			appFailures = true
-		case "UNKNOWN":
-			statusReportComplete = "? UNKNOWN"
-			appFailures = true
-		}
-
-		if t, err := ptypes.Timestamp(appStatusResp.GeneratedTime); err == nil {
-			statusReportComplete = fmt.Sprintf("%s - %s", statusReportComplete, humanize.Time(t))
-		}
+		statusReportComplete := c.FormatStatusReportComplete(appStatusResp)
 
 		statusColor := ""
 		columns := []string{
@@ -302,27 +282,7 @@ func (c *StatusCommand) FormatAppStatus(projectTarget string, appTarget string) 
 	appTbl := terminal.NewTable(appHeaders...)
 
 	appFailures := false
-	statusReportComplete := "N/A"
-	// TODO: make a func that returns the result of statusReportComplete
-	switch appStatusResp.Health.HealthStatus {
-	case "READY":
-		statusReportComplete = "✔ READY"
-	case "ALIVE":
-		statusReportComplete = "✔ ALIVE"
-	case "DOWN":
-		statusReportComplete = "✖ DOWN"
-		appFailures = true
-	case "PARTIAL":
-		statusReportComplete = "● PARTIAL"
-		appFailures = true
-	case "UNKNOWN":
-		statusReportComplete = "? UNKNOWN"
-		appFailures = true
-	}
-
-	if t, err := ptypes.Timestamp(appStatusResp.GeneratedTime); err == nil {
-		statusReportComplete = fmt.Sprintf("%s - %s", statusReportComplete, humanize.Time(t))
-	}
+	statusReportComplete := c.FormatStatusReportComplete(appStatusResp)
 
 	statusColor := ""
 	columns := []string{
@@ -504,22 +464,7 @@ func (c *StatusCommand) FormatProjectStatus() error {
 		//var lastRelevantAppStatus *pb.StatusReport
 
 		if len(appStatusReports) != 0 {
-			switch appStatusReports[0].Health.HealthStatus {
-			case "READY":
-				statusReportComplete = "✔ READY"
-			case "ALIVE":
-				statusReportComplete = "✔ ALIVE"
-			case "DOWN":
-				statusReportComplete = "✖ DOWN"
-			case "PARTIAL":
-				statusReportComplete = "● PARTIAL"
-			case "UNKNOWN":
-				statusReportComplete = "? UNKNOWN"
-			}
-
-			if t, err := ptypes.Timestamp(appStatusReports[0].GeneratedTime); err == nil {
-				statusReportComplete = fmt.Sprintf("%s - %s", statusReportComplete, humanize.Time(t))
-			}
+			statusReportComplete = c.FormatStatusReportComplete(appStatusReports[0])
 		}
 
 		statusColor := ""
@@ -550,6 +495,29 @@ func (c *StatusCommand) FormatProjectStatus() error {
 	return nil
 }
 
+func (c *StatusCommand) FormatStatusReportComplete(statusReport *pb.StatusReport) string {
+	statusReportComplete := "N/A"
+
+	switch statusReport.Health.HealthStatus {
+	case "READY":
+		statusReportComplete = "✔ READY"
+	case "ALIVE":
+		statusReportComplete = "✔ ALIVE"
+	case "DOWN":
+		statusReportComplete = "✖ DOWN"
+	case "PARTIAL":
+		statusReportComplete = "● PARTIAL"
+	case "UNKNOWN":
+		statusReportComplete = "? UNKNOWN"
+	}
+
+	if t, err := ptypes.Timestamp(statusReport.GeneratedTime); err == nil {
+		statusReportComplete = fmt.Sprintf("%s - %s", statusReportComplete, humanize.Time(t))
+	}
+
+	return statusReportComplete
+}
+
 func (c *StatusCommand) displayJson() error {
 	var output []map[string]interface{}
 
@@ -560,34 +528,6 @@ func (c *StatusCommand) displayJson() error {
 
 	c.ui.Output(string(data))
 	return nil
-}
-
-func (c *StatusCommand) GetProjects() ([]*pb.Project, error) {
-	// Get our API client
-	client := c.project.Client()
-
-	projectResp, err := client.ListProjects(c.Ctx, &empty.Empty{})
-	if err != nil {
-		return nil, err
-	}
-	projNameList := projectResp.Projects
-
-	var projects []*pb.Project
-	for _, projRef := range projNameList {
-		resp, err := client.GetProject(c.Ctx, &pb.GetProjectRequest{
-			Project: projRef,
-		})
-		if err != nil {
-			return nil, err
-		}
-		project := resp.Project
-		// WHAT ABOUT WORKSPACES?
-
-		projects = append(projects, project)
-	}
-
-	return projects, nil
-
 }
 
 func (c *StatusCommand) Flags() *flag.Sets {
