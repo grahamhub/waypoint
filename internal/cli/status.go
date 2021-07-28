@@ -2,7 +2,6 @@ package cli
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -254,7 +253,7 @@ func (c *StatusCommand) FormatAppStatus(projectTarget string, appTarget string) 
 		}
 	}
 	if app == nil {
-		return errors.New(fmt.Sprintf("Did not find aplication %q in project %q", appTarget, projectTarget))
+		return fmt.Errorf(fmt.Sprintf("Did not find aplication %q in project %q", appTarget, projectTarget))
 	}
 
 	appStatusResp, err := client.GetLatestStatusReport(c.Ctx, &pb.GetLatestStatusReportRequest{
