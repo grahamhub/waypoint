@@ -33,7 +33,6 @@ func (c *StatusCommand) Run(args []string) int {
 	flagSet := c.Flags()
 	// Initialize. If we fail, we just exit since Init handles the UI.
 	// TODO: this doesn't support running waypoint commands outside of a project dir
-	// TODO: this is also broken if multiple apps defined in a config
 	if err := c.Init(
 		WithArgs(args),
 		WithFlags(flagSet),
@@ -67,15 +66,7 @@ func (c *StatusCommand) Run(args []string) int {
 		return 1
 	}
 
-	// Use-Cases for data ouptut
-	// Project scoped info
-	// 1. waypoint status
-	// 2. waypoint status project
-	// 2.1 waypoint status (inside a project dir)
-	// Application scoped info
-	// 3 waypoint status project/app
-	// 3.1 waypoint status project -app=app
-
+	// Determine which view to show based on user input
 	var projectTarget, appTarget string
 	if len(cmdArgs) >= 1 {
 		s := cmdArgs[0]
@@ -98,6 +89,7 @@ func (c *StatusCommand) Run(args []string) int {
 		c.ui.Output(wpAppFlagAndTargetIncludedMsg, terminal.WithWarningStyle())
 	}
 
+	// Generate a status view
 	if projectTarget == "" || c.flagAllProjects {
 		// Show high-level status of all projects
 		c.ui.Output(wpStatusMsg, ctxConfig.Server.Address)
@@ -482,7 +474,7 @@ func (c *StatusCommand) FormatProjectStatus() error {
 		)
 	}
 
-	// Sort by Name, Workspace, or Status
+	// TODO: Sort by Name, Workspace, or Status
 	// might have to pre-sort by status since strings are ascii
 
 	// Render the table
