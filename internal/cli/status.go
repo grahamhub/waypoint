@@ -32,10 +32,11 @@ func (c *StatusCommand) Run(args []string) int {
 	flagSet := c.Flags()
 	// Initialize. If we fail, we just exit since Init handles the UI.
 	// TODO: this doesn't support running waypoint commands outside of a project dir
+	// TODO: this is also broken if multiple apps defined in a config
 	if err := c.Init(
 		WithArgs(args),
 		WithFlags(flagSet),
-		WithSingleApp(),
+		WithMaybeApp(),
 	); err != nil {
 		return 1
 	}
@@ -108,14 +109,155 @@ func (c *StatusCommand) Run(args []string) int {
 	} else if projectTarget != "" && appTarget == "" {
 		// Show status of apps inside project
 		c.ui.Output(wpStatusProjectMsg, projectTarget, ctxConfig.Server.Address)
+
+		err = c.FormatProjectAppStatus(projectTarget)
+		if err != nil {
+			c.ui.Output("Failed to format project app statuses", terminal.WithErrorStyle())
+			c.ui.Output(clierrors.Humanize(err), terminal.WithErrorStyle())
+			return 1
+		}
 	} else if projectTarget != "" && appTarget != "" {
 		// Advanced view of a single app status
 		c.ui.Output(wpStatusAppProjectMsg, appTarget, projectTarget, ctxConfig.Server.Address)
+
+		err = c.FormatAppStatus(projectTarget, appTarget)
+		if err != nil {
+			c.ui.Output("Failed to format app status", terminal.WithErrorStyle())
+			c.ui.Output(clierrors.Humanize(err), terminal.WithErrorStyle())
+			return 1
+		}
 	}
 
 	return 0
 }
 
+// FormatProjectAppStatus formats all applications inside a project
+func (c *StatusCommand) FormatProjectAppStatus(projectTarget string) error {
+	// Get our API client
+	client := c.project.Client()
+
+	resp, err := client.GetProject(c.Ctx, &pb.GetProjectRequest{
+		Project: &pb.Ref_Project{
+			Project: projectTarget,
+		},
+	})
+	if err != nil {
+		return err
+	}
+
+	var workspace string
+	if len(resp.Workspaces) == 0 {
+		// this happens if you just wapyoint init
+		// probably a bug?
+		workspace = "???"
+	} else {
+		workspace = resp.Workspaces[0].Workspace.Workspace // TODO: assume the first workspace is correct??
+	}
+
+	// Summary
+	//   App list
+
+	appHeaders := []string{
+		"App", "Workspace", "Latest Status",
+	}
+
+	appTbl := terminal.NewTable(appHeaders...)
+
+	appFailures := false
+	for _, app := range resp.Project.Applications {
+		if workspace == "???" {
+			workspace = "default"
+		}
+		appStatusResp, err := client.GetLatestStatusReport(c.Ctx, &pb.GetLatestStatusReportRequest{
+			Application: &pb.Ref_Application{
+				Application: app.Name,
+				Project:     resp.Project.Name,
+			},
+			Workspace: &pb.Ref_Workspace{
+				Workspace: workspace,
+			},
+		})
+		if status.Code(err) == codes.NotFound {
+			// App doesn't have a status report yet, likely not deployed
+			err = nil
+			continue
+		}
+		if err != nil {
+			return err
+		}
+
+		statusReportComplete := "N/A"
+		// TODO: make a func that returns the result of statusReportComplete
+		switch appStatusResp.Health.HealthStatus {
+		case "READY":
+			statusReportComplete = "✔ READY"
+		case "ALIVE":
+			statusReportComplete = "✔ ALIVE"
+		case "DOWN":
+			statusReportComplete = "✖ DOWN"
+			appFailures = true
+		case "PARTIAL":
+			statusReportComplete = "● PARTIAL"
+			appFailures = true
+		case "UNKNOWN":
+			statusReportComplete = "? UNKNOWN"
+			appFailures = true
+		}
+
+		if t, err := ptypes.Timestamp(appStatusResp.GeneratedTime); err == nil {
+			statusReportComplete = fmt.Sprintf("%s - %s", statusReportComplete, humanize.Time(t))
+		}
+
+		statusColor := ""
+		columns := []string{
+			app.Name,
+			workspace,
+			statusReportComplete, // app statuses overall
+		}
+
+		// Add column data to table
+		appTbl.Rich(
+			columns,
+			[]string{
+				statusColor,
+			},
+		)
+	}
+
+	c.ui.Output("")
+	c.ui.Table(appTbl, terminal.WithStyle("Simple"))
+	c.ui.Output("")
+	c.ui.Output(wpStatusProjectSuccessMsg)
+
+	if appFailures {
+		c.ui.Output("")
+
+		c.ui.Output(wpStatusHealthTriageMsg, projectTarget, terminal.WithWarningStyle())
+	}
+
+	return nil
+}
+
+func (c *StatusCommand) FormatAppStatus(projectTarget string, appTarget string) error {
+	// Get our API client
+	//client := c.project.Client()
+
+	// TODO: Multiple tables to print here. Generate all tables
+	// and print them all at once at the end
+
+	// App Summary
+	//  Summary of single app
+	// Deployment Summary
+	//   Deployment List
+	// Deployment Resources Summary
+	//   Resources List
+	// Recent Events
+	//   Events List
+
+	return nil
+}
+
+// FormatProjectStatus formats all known projects into a table
 func (c *StatusCommand) FormatProjectStatus() error {
 	// Get our API client
 	client := c.project.Client()
@@ -326,6 +468,12 @@ in the Waypoint server. For more information about a project’s applications an
 their current state, run ‘waypoint status PROJECT-NAME’.
 `)
 
+	wpStatusProjectSuccessMsg = strings.TrimSpace(`
+The project and its apps listed above represents its current state known
+in the Waypoint server. For more information about a project’s applications and
+their current state, run ‘waypoint status -app=APP-NAME PROJECT-NAME’.
+`)
+
 	wpStatusMsg = "Current project statuses in server context %q"
 
 	wpStatusProjectMsg = "Current status for project %q in server context %q."
@@ -336,19 +484,19 @@ Current status for application % q in project %q in server context %q.
 
 	// Failure messages
 
-	// TODO how to show hints for multiple app failures
 	wpStatusHealthTriageMsg = strings.TrimSpace(`
 To see more information about the failing application, please check out the application logs:
 
-waypoint logs -app=%[1]s
+waypoint logs -app=APP-NAME
 
 The projects listed above represent their current state known
-in Waypoint server. For more information about an application defined in the project %[1]q can be viewed by running the command:
+in Waypoint server. For more information about an application defined in the
+project %[1]q can be viewed by running the command:
 
-waypoint status %[2]s -app=%[1]s.
+waypoint status -app=APP-NAME %[1]s
 `)
 
-	wpProjectNotFound = strings.TrimeSpace(`
+	wpProjectNotFound = strings.TrimSpace(`
 No project name %q was found for the server context %q. To see a list of
 currently configured projects, run “waypoint project list”.
 
@@ -356,7 +504,7 @@ If you want more information for a specific application, use the '-app' flag
 with “waypoint status PROJECT-NAME -app=APP-NAME”.
 `)
 
-	wpAppFlagAndTargetIncludedMsg = strings.TrimeSpace(`
+	wpAppFlagAndTargetIncludedMsg = strings.TrimSpace(`
 The 'app' flag was included, but an application was also requested as an argument.
 The app flag will be ignored.
 `)
