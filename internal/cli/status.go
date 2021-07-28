@@ -93,6 +93,7 @@ func (c *StatusCommand) Run(args []string) int {
 	if appTarget == "" && c.flagApp != "" {
 		appTarget = c.flagApp
 	} else if appTarget != "" && c.flagApp != "" {
+		// setting app target and passing the flag app is a collision
 		c.ui.Output(wpAppFlagAndTargetIncludedMsg, terminal.WithWarningStyle())
 	}
 
@@ -102,7 +103,7 @@ func (c *StatusCommand) Run(args []string) int {
 
 		err = c.FormatProjectStatus()
 		if err != nil {
-			c.ui.Output("Failed to format project statuses", terminal.WithErrorStyle())
+			c.ui.Output("CLI failed to build project statuses:", terminal.WithErrorStyle())
 			c.ui.Output(clierrors.Humanize(err), terminal.WithErrorStyle())
 			return 1
 		}
@@ -112,7 +113,7 @@ func (c *StatusCommand) Run(args []string) int {
 
 		err = c.FormatProjectAppStatus(projectTarget)
 		if err != nil {
-			c.ui.Output("Failed to format project app statuses", terminal.WithErrorStyle())
+			c.ui.Output("CLI failed to format project app statuses:", terminal.WithErrorStyle())
 			c.ui.Output(clierrors.Humanize(err), terminal.WithErrorStyle())
 			return 1
 		}
@@ -122,7 +123,7 @@ func (c *StatusCommand) Run(args []string) int {
 
 		err = c.FormatAppStatus(projectTarget, appTarget)
 		if err != nil {
-			c.ui.Output("Failed to format app status", terminal.WithErrorStyle())
+			c.ui.Output("CLI failed to format app status", terminal.WithErrorStyle())
 			c.ui.Output(clierrors.Humanize(err), terminal.WithErrorStyle())
 			return 1
 		}
